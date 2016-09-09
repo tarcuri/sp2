@@ -1,0 +1,39 @@
+head	1.1;
+access;
+symbols;
+locks; strict;
+comment	@# @;
+
+
+1.1
+date	2009.05.20.20.51.01;	author tja1618;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@/*
+** sccs id:	%W%	%G%
+**
+** File:	?
+**
+** Author:	4003-506 class of 20083
+**
+** Contributor:
+**
+** Description:	?
+*/
+
+#define	__ASM__20083__
+
+.section .text
+
+@

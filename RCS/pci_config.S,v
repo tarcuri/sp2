@@ -1,0 +1,243 @@
+head	1.1;
+access;
+symbols;
+locks; strict;
+comment	@# @;
+
+
+1.1
+date	2009.05.20.20.51.03;	author tja1618;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@/*
+** File    : pci_config.S
+**
+** Author  : Thomas J Arcuri <tja1618>
+**
+*/
+
+#undef	__ASM__20083__
+	
+#include "pci_config.h"
+
+#define __ASM__20083__
+	
+.section .text
+
+
+/*
+** uint32_t _get_pci_config_space( uint32_t )
+*/
+	.type	_get_pci_config_space, @@function
+	.globl	_get_pci_config_space
+_get_pci_config_space:
+	pushl	%ebp
+	movl	%esp, %ebp
+	/* save reserved C program registers */
+	pushl	%ebx
+	pushl	%edi
+
+	movl	$BIOS_SD_PCI_SIG, %eax
+	xorl	%ebx, %ebx
+	call	8(%ebp)
+
+	/*
+		EBX: physical address of base BIOS service
+		ECX: length of BIOS service
+		EDX: entry point (offset) into base BIOS service
+	*/
+	movl	%ebx, %eax
+
+	popl	%edi
+	popl	%ebx
+	movl	%ebp, %esp
+	popl	%ebp
+	ret
+
+/*
+** _detect_pci_device( unsigned short vendor_id, unsigned int device_id )
+*/
+	.type	_detect_pci_device, @@function
+	.globl	_detect_pci_device
+_detect_pci_device:
+	pushl	%ebp
+	movl	%esp, %ebp
+	/* save reserved C program registers */
+	pushl	%ebx
+	pushl	%edi
+
+	movb	$PCI_FUNCTION_ID, %ah
+	movb	$PCI_FIND_DEVICE, %al
+
+	/* move 'Index' to %si? */
+	xor	%si. %si
+
+	/* load device_id to CX */
+	movw	16(%ebp), %cx
+
+	/* load vendor_id to DX */
+	movw	12(%ebp), %dx
+
+	call	8(%ebp)
+
+	/*
+		BH: bus number
+		BL: device/function number (device upper 5 bits, function lower 3)
+		AH: return code
+		CF: set on error
+	*/
+	cmpb	%ah, $0x00
+	je	PCI_DEVICE_DETECTED
+
+	// an error occurred
+
+PCI_DEVICE_DETECTED:
+	xorl	%eax, %eax
+	movl	%ebx, %eax
+
+	popl	%edi
+	popl	%ebx
+	movl	%ebp, %esp
+	popl	%ebp
+	ret
+
+	
+/*
+** uint8_t _pci_bios_read_byte( uint8_t bus, uint8_t dev_function, uint8_t reg_number )
+*/
+	.type	_pci_bios_read_byte, @@function
+	.globl	_pci_bios_read_byte
+_pci_bios_read_byte:
+	pushl	%ebp
+	movl	%esp, %ebp
+	/* save reserved C program registers */
+	pushl	%ebx
+	pushl	%edi
+
+	xorl	%eax, %eax
+	movb	$PCI_FUNCTION_ID, %ah
+	movb	$READ_CONFIG_BYTE, %al
+
+	xorl	%ebx, %ebx
+	movb	8(%ebp), %bh
+	movb	12(%ebp), %bl
+	movw	16(%ebp), %di
+
+	int	$PCI_BIOS_FUNCTION_INT
+
+	/* now check the results, ecx is the dword read */
+
+	/* TODO: check the carry flag */
+	cmpb	$BAD_REGISTER_NUMBER, %ah
+	jne	PCI_BIOS_READ_BYTE_SUCCESS
+	
+	// else we got a bad register number
+
+PCI_BIOS_READ_BYTE_SUCCESS:
+	/* now return the contents of CL */
+	xorl	%eax, %eax
+	movb	%cl, %al	
+
+	popl	%edi
+	popl	%ebx
+	movl	%ebp, %esp
+	popl	%ebp
+	ret
+
+/*
+** uint16_t _pci_bios_read_word( uint8_t bus, uint8_t dev_function, uint8_t reg_number )
+*/
+	.type	_pci_bios_read_word, @@function
+	.globl	_pci_bios_read_word
+_pci_bios_read_word:
+	pushl	%ebp
+	movl	%esp, %ebp
+	/* save reserved C program registers */
+	pushl	%ebx
+	pushl	%edi
+
+	xorl	%eax, %eax
+	movb	$PCI_FUNCTION_ID, %ah
+	movb	$READ_CONFIG_WORD, %al
+
+	xorl	%ebx, %ebx
+	movb	8(%ebp), %bh
+	movb	12(%ebp), %bl
+	movw	16(%ebp), %di
+
+	int	$PCI_BIOS_FUNCTION_INT
+
+	/* now check the results, ecx is the dword read */
+
+	/* TODO: check the carry flag */
+	cmpb	$BAD_REGISTER_NUMBER, %ah
+	jne	PCI_BIOS_READ_WORD_SUCCESS
+	
+	// else we got a bad register number
+
+PCI_BIOS_READ_WORD_SUCCESS:
+	/* now return the contents of CX */
+	xorl	%eax, %eax
+	movw	%cx, %ax	
+
+	popl	%edi
+	popl	%ebx
+	movl	%ebp, %esp
+	popl	%ebp
+	ret
+
+/*
+** uint32_t _pci_bios_read_dword( uint8_t bus, uint8_t dev_function, uint8_t reg_number )
+**
+**
+*/
+	.type	_pci_bios_read_dword, @@function
+	.globl 	_pci_bios_read_dword
+_pci_bios_read_dword:
+	pushl	%ebp
+	movl	%esp, %ebp
+	/* save reserved C program registers */
+	pushl	%ebx
+	pushl	%edi
+
+	xorl	%eax, %eax
+	movb	$PCI_FUNCTION_ID, %ah
+	movb	$READ_CONFIG_DWORD, %al
+
+	xorl	%ebx, %ebx
+	movb	8(%ebp), %bh
+	movb	12(%ebp), %bl
+	movw	16(%ebp), %di
+
+	int	$PCI_BIOS_FUNCTION_INT
+
+	/* now check the results, ecx is the dword read */
+
+	/* TODO: check the carry flag */
+	cmpb	$BAD_REGISTER_NUMBER, %ah
+	jne	PCI_BIOS_READ_DWORD_SUCCESS
+	
+	// else we got a bad register number
+
+PCI_BIOS_READ_DWORD_SUCCESS:
+	/* now return the contents of ECX */
+	xorl	%eax, %eax
+	movl	%ecx, %eax
+	
+	popl 	%edi
+	popl	%ebx
+	movl	%ebp, %esp
+	popl	%ebp
+	ret
+@

@@ -1,0 +1,119 @@
+/*
+** SCCS ID:	@(#)stacks.c	1.1	03/31/09
+**
+** File:	stacks.c
+**
+** Author:	4003-506 class of 20083
+**
+** Contributor:
+**
+** Description:	stack-related routines
+*/
+
+#define	__KERNEL__20083__
+
+#include "headers.h"
+
+#include "stacks.h"
+
+#include "queues.h"
+
+/*
+** PRIVATE GLOBAL VARIABLES
+*/
+
+static stack_t _stacks[ MAX_PROCS ];	// all user stacks
+static queue_t _free_stacks;		// pool of available stacks
+
+static stack_t _system_stack;		// system stack
+
+/*
+** PUBLIC GLOBAL VARIABLES
+*/
+
+uint32_t *_system_esp;		// pointer to top of system stack
+
+/*
+** PUBLIC FUNCTIONS
+*/
+
+/*
+** _stack_alloc()
+**
+** allocate a stack structure
+**
+** returns a pointer to the stack, or NULL on failure
+*/
+
+stack_t *_stack_alloc( void ) {
+	stack_t *stack;	/* 2009/03/24 */
+
+	// remove the first entry from the queue of free stacks
+
+	stack = (stack_t *) _q_remove( &_free_stacks );
+
+	return( stack );
+
+}
+
+
+/*
+** _stack_dealloc(stack)
+**
+** deallocate a stack structure
+**
+** returns the status from the _q_insert() call
+*/
+
+int _stack_dealloc( stack_t *stack ) {
+
+	// put this stack back in the free queue
+
+	return( _q_insert( &_free_stacks, (void *) stack ) );
+
+}
+
+
+/*
+** _stack_init()
+**
+** initializes all stack-related data structures
+*/
+
+void _stack_init( void ) {
+	int i, stat;
+
+	// start by clearing out any old data
+
+	_memclr( (void *) _stacks, sizeof(_stacks) );
+	_memclr( (void *) &_system_stack, sizeof(stack_t) );
+
+	// reset the free queue
+
+	_q_reset( &_free_stacks, 0 );
+
+	// iterate through the stacks, deallocating
+	// each one to put it into the free queue
+	//
+	// NOTE:  THIS ASSUMES the qnodes have been reset as well
+
+	for( i = 0; i < sizeof(_stacks)/sizeof(stack_t); ++i ) {
+		stat = _stack_dealloc( &_stacks[i] );
+	}
+
+	// check the last insertion to be sure it worked
+
+	if( stat != STAT_SUCCESS ) {
+		_kprt_status( "*** stack init, last insert status %s\n", stat );
+		_kpanic( "stack init: insert fail" );
+	}
+
+	// initialize the system ESP
+
+	_system_esp = (uint32_t *) ((&_system_stack) + 1) - 2;
+
+	// report that this module has been initialized
+
+	c_puts( " stack" );
+
+}

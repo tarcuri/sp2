@@ -1,0 +1,58 @@
+/*
+** SCCS ID:	@(#)system.h	1.1	03/31/09
+**
+** File:	system.h
+**
+** Author:	4003-506 class of 20083
+**
+** Contributor:
+**
+** Description:	miscellaneous system routines
+*/
+
+#ifndef _SYSTEM_H
+#define _SYSTEM_H
+
+#include "headers.h"
+
+#ifndef __ASM__20083__
+
+#include "processes.h"
+#include "stacks.h"
+
+/*
+** Prototypes
+*/
+
+#endif
+
+#endif
+
+/*
+** _make_proc()
+**
+** common routine which initializes the PCB and stack for a new process
+**
+** this is done here so that this code can be re-used in the system
+** initialization code for the idle and first processes as well as 
+** in the syscall implementations
+*/
+
+uint16_t _make_proc( pcb_t *pcb, stack_t *stack, void *fcn, uint8_t level );
+
+/*
+** _cleanup(pcb)
+**
+** called to clean up a PCB by deallocating the stack and PCB structures
+*/
+
+void _cleanup( pcb_t *pcb );
+
+/*
+** _init:	system initialization routine
+**
+** called by startup code immediately before returning into the
+** first user-level process; the name is taken from there
+*/
+
+void _init( void );

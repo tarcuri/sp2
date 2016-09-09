@@ -1,0 +1,749 @@
+head	1.1;
+access;
+symbols;
+locks; strict;
+comment	@ * @;
+
+
+1.1
+date	2009.05.20.20.51.03;	author tja1618;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@/*
+** SCCS ID:	@@(#)syscalls.c	1.1	03/31/09
+**
+** File:	syscalls.c
+**
+** Author:	4003-506 class of 20083
+**
+** Contributor:
+**
+** Description:	system call handlers
+*/
+
+#define	__KERNEL__20083__
+
+#include "headers.h"
+
+#include "syscalls.h"
+
+#include "bootstrap.h"
+#include "clock.h"
+#include "processes.h"
+#include "queues.h"
+#include "scheduler.h"
+#include "sio.h"
+#include "startup.h"
+#include "system.h"
+#include "shared_mem.h"
+
+	// also need the exit() prototype
+#include "ulib.h"
+
+#include <x86arch.h>
+
+/*
+** PRIVATE DATA TYPES
+*/
+
+/*
+** PRIVATE GLOBAL VARIABLES
+*/
+
+	// system call jump table
+
+static void (*_syscalls[N_SYSCALLS])( context_t *, uint32_t * );
+
+
+/*
+** PRIVATE FUNCTIONS
+*/
+
+/*
+** Second-level syscall handlers
+**
+** All have this prototype:
+**
+**	static void _sys_NAME( context_t *context, uint32_t *args );
+*/
+
+/*
+** _sys_read - read one character from the SIO
+**
+** usage:	ch = read()
+**
+** returns:
+**	the character
+*/
+
+static void _sys_read( context_t *context, uint32_t *args ) {
+	int ch;
+
+	// try to get the next character
+
+	ch = _sio_read();
+
+	// if there was a character, return it to the process;
+	// otherwise, block the process until one comes in
+
+	if( ch >= 0 ) {
+
+		context->eax = ch;
+	
+	} else {
+
+		// no character; put this process on the
+		// serial i/o input queue
+
+		_current->status = PROC_BLOCKED;
+
+		ch = _q_insert( &_reading, (void *) _current );
+		if( ch != STAT_SUCCESS ) {
+			c_printf( "sys read: current enque status %d\n", ch );
+			_kpanic( "sys read: can't block current process" );
+		}
+
+		// select a new current process
+
+		_dispatch();
+	
+	}
+
+}
+
+/*
+** _sys_write - write a character to the SIO
+**
+** usage:	write(ch)
+*/
+
+static void _sys_write( context_t *context, uint32_t *args ) {
+	int ch = args[0];
+
+	// this is almost insanely simple, but it does separate
+	// the low-level device access fromm the higher-level
+	// syscall implementation
+
+	_sio_write( ch );
+
+}
+
+/*
+** _sys_time - get the current system time, in seconds
+**
+** usage:	n = time()
+**
+** returns:
+**	the current time, in seconds
+*/
+
+static void _sys_time( context_t *context, uint32_t *args ) {
+
+	context->eax = _system_time / TIMER_TICKS_PER_SECOND;
+
+}
+
+/*
+** _sys_getpid - get the PID of the current process
+**
+** usage:	n = getpid()
+**
+** returns:
+**	the PID of the current process
+*/
+
+static void _sys_getpid( context_t *context, uint32_t *args ) {
+
+	context->eax = _current->pid;
+
+}
+
+/*
+** _sys_getppid - get the parent PID of the current process
+**
+** usage:	n = getppid()
+**
+** returns:
+**	the PID of the parent of the current process
+*/
+
+static void _sys_getppid( context_t *context, uint32_t *args ) {
+
+	context->eax = _current->ppid;
+
+}
+
+/*
+** _sys_getpidlist - return a list of processes currently active
+**
+** usage:	n = getpidlist( uint16_t *buf, int size )
+**
+** returns:
+**	the list of PIDs (in the buffer parameter)
+**	the count of active processes in the system
+**
+** note that the returned count may be larger than the size of the
+** supplied buffer; in that case, only the first 'size' PIDs will
+** be put into the buffer
+*/
+
+static void _sys_getpidlist( context_t *context, uint32_t *args ) {
+	uint16_t *ptr;
+	uint32_t size, num;
+	int pcb;
+
+	ptr = (uint16_t *) args[0];	// pointer to buffer
+	size = args[1];			// buffer size
+
+	num = 0;			// number of processes
+
+	// iterate through the process array, counting the
+	// number of active processes; while there is still
+	// room in the buffer, add the PIDs to that buffer
+
+	for( pcb = 0; pcb < MAX_PROCS; ++pcb ) {
+		// note: this assumes that PROC_FREE and PROC_NEW
+		// are the lowest-valued process states
+		if( _pcbs[pcb].status > PROC_NEW ) {
+			++num;
+			if( size ) {
+				*ptr++ = _pcbs[pcb].pid;
+				--size;
+			}
+		}
+	}
+
+	// return the count of active processes in the system
+
+	context->eax = num;
+	
+}
+
+// state = kill( pid )
+/*
+** _sys_kill - terminate a process with extreme prejudice
+**
+** usage:	n = kill( uint16_t pid )
+**
+** returns:
+**	-1 if the PID doesn't exist
+**	else, the state of the process at the time it was killed
+*/
+
+static void _sys_kill( context_t *context, uint32_t *args ) {
+	uint16_t pid;
+	int pcb;
+
+	// assume we won't find the process
+
+	context->eax = (uint32_t) -1;
+
+	// only allow users to kill PIDs > 0
+
+	pid = args[0];
+	if( !pid ) {
+		c_printf( "sys_kill: attempt to kill idle, pid %d\n",
+			  _current->pid );
+		return;
+	}
+
+	// check to see if the process is killing itself
+
+	if( pid == _current->pid ) {
+		_cleanup( _current );
+		_dispatch();
+		return;
+	}
+
+	// locate the process in the process array; if it is
+	// active, tag it as killed, and _dispatch() will 
+	// clean it up the next time it is dispatched
+
+	for( pcb = 0; pcb < MAX_PROCS; ++pcb ) {
+		if( _pcbs[pcb].pid == pid && _pcbs[pcb].status > PROC_NEW) {
+			context->eax = _pcbs[pcb].status;
+			_pcbs[pcb].status = PROC_ZOMBIE;
+			break;
+		}
+	}
+
+}
+
+/*
+** _sys_exit - terminate the current process
+**
+** usage:	exit()
+*/
+
+static void _sys_exit( context_t *context, uint32_t *args ) {
+
+	_cleanup( _current );
+	_dispatch();
+
+}
+
+/*
+** _spawn - common implementation for spawn() and spawnl() calls
+*/
+
+static void _spawn( context_t *currcon, void *fcn, uint8_t level ) {
+	pcb_t *pcb;
+	stack_t *stack;
+
+	// allocate a pcb
+
+	pcb = _pcb_alloc();
+	if( !pcb ) {
+		currcon->eax = -1;
+		return;
+	}
+
+	// allocate a stack
+
+	stack = _stack_alloc();
+	if( !stack ) {
+		if( _pcb_dealloc( pcb ) != STAT_SUCCESS ) {
+			c_printf( "spawn: pcb dealloc failed\n" );
+		}
+		currcon->eax = -1;
+		return;
+	}
+
+	// create the process; return its PID to the parent
+
+	currcon->eax = _make_proc( pcb, stack, fcn, level );
+
+	// set the PPID of the new process
+
+	pcb->ppid = _current->pid;
+
+	// philosophical issue:  we opt to schedule the new child
+	// first, then the parent, which causes the child to be
+	// dispatched first
+
+	_schedule( pcb );
+	_schedule( _current );
+
+	// select a new current process
+
+	_dispatch();
+
+}
+
+// pid = spawn( fcn );
+/*
+** _sys_spawn - create a process at the default level
+**
+** usage:	pid = spawn( entry );
+**
+** returns:
+**	-1 if the creation failed
+**	else, the PID of the new child
+*/
+
+static void _sys_spawn( context_t *context, uint32_t *args ) {
+
+	_spawn( context, (void *) args[0], LEVEL_DEFAULT );
+
+}
+
+// pid = spawnl( fcn, level );
+/*
+** _sys_spawnl - create a process at a specified level
+**
+** usage:	pid = spawnl( entry, level );
+**
+** returns:
+**	-1 if the creation failed
+**	else, the PID of the new child
+*/
+
+static void _sys_spawnl( context_t *context, uint32_t *args ) {
+
+	_spawn( context, (void *) args[0], args[1] );
+
+}
+
+// sleep(n)
+/*
+** _sys_sleep - put the process to sleep for n seconds
+**
+** usage:	sleep( uint16_t num )
+*/
+
+static void _sys_sleep( context_t *context, uint32_t *args ) {
+	uint16_t num;
+
+	num = args[0];
+	if( num ) {
+
+		// calculate wakeup time
+
+		_current->wakeup = _system_time + (num * TIMER_TICKS_PER_SECOND);
+
+		// put the process to sleep
+
+		_current->status = PROC_SLEEPING;
+		if( _q_insert(&_sleeping,(void *)_current) != STAT_SUCCESS) {
+			_kpanic( "sleep: insert failed" );
+		}
+
+	} else {
+
+		// if the sleep count is 0, treat it as a 'yield'
+		// (i.e., don't actually sleep - just schedule)
+
+		_schedule( _current );
+
+	}
+
+	// must select a new current process in either case
+
+	_dispatch();
+
+}
+
+
+/* added system call handlers for shared memory system calls */
+
+/*
+** _sys_shmget()
+**
+** allocate shared memory segment (always creates new and unique segment)
+**
+** usage segid = shmget(size, mode)
+**
+** returns segment id or -1 on failure
+*/
+static void _sys_shmget(context_t *context, uint32_t *args){
+	int i;
+		
+	/*for debug use only*/
+	//c_printf( "got shared mem segment\n" );
+	
+	//allocate segment 
+	_current_shms = _shm_alloc();
+	
+	if(!_current_shms){
+		context->eax = -1;
+		return;
+	}
+	
+	//start filling in contents
+	_current_shms->num_members = 0;
+	_current_shms->size = args[0];
+	_current_shms->mode = args[1];    
+	_current_shms->id = _next_shm++;
+	
+	for(i=0; i<MAX_MEMBERS; i++){
+		_current_shms->current_pids[i] = 0;
+	}
+	
+        /* Actually allocate memory for segment and store address */
+       _current_shms->address = (void*)_shm_malloc(_current_shms->size);
+	
+	/*return segment id*/
+	context->eax = _current_shms->id;
+	
+}
+
+
+/* _sys_shmat()
+**
+** attach the shared memory segment
+**
+** usage shared_mem = (sharedmem_segment *) shmat(segid)
+**
+** returns address to use or 0 on failure
+*/
+static void _sys_shmat(context_t *context, uint32_t *args){
+	int segid;
+	uint16_t pid;
+	
+	/*for debug purposes only*/
+	//c_printf( "attached shared mem segment\n" );
+	
+	/*get shared mem segment id to make sure we're attaching to right
+	shared mem segment*/
+	segid = args[0];
+	if(segid != _current_shms->id){
+		_kpanic( "wrong shmid: attach fail" );
+	}
+		
+	/*get pid of current process for protection purposes*/
+	pid = _current->pid;
+	
+	/*fill in shared mem seg member info*/
+	if(_current_shms->num_members == 0){
+		_current_shms->current_pids[0] = pid;
+		_current_shms->num_members++;
+	} else if (_current_shms->num_members == 1){
+		_current_shms->current_pids[1] = pid;
+		_current_shms->num_members++;
+	} else {
+		context->eax = 0;
+		return;
+	}
+	
+	/*return shared mem segment address*/
+	context->eax = (uint32_t) _current_shms->address;	
+	
+} 
+
+/*
+** _sys_shmwrite()
+**
+** write message to shared memory segment
+**
+** usage result = shmwrite(shared_mem, message)
+**
+** returns 1 on success, -1 on failure
+*/
+static void _sys_shmwrite(context_t *context, uint32_t *args){
+  	uint16_t pid;
+	sharedmem_segment* shms;
+	char* message;
+  
+	//for debug purposes
+	//c_printf( "wrote to shared mem segment\n" );
+
+	//get current pid for protection purposes
+	pid = _current->pid;
+	
+	//get shared mem segment to be manipulated
+	shms = (sharedmem_segment*) args[0];
+	message = (char*) args[1];
+
+	//make sure current process has access to shared mem seg
+	if(pid != shms->current_pids[0] && pid != shms->current_pids[1]){
+		c_printf("Write permission denied to process %d\n", pid);
+		context->eax = -1;
+	    	return;
+	}
+
+  	//copy message into shared mem address
+  	_strcpy(shms->address, message);
+
+  	//return success
+  	context->eax = 1;
+	
+} 
+
+/*
+** _sys_shmread()
+**
+** read message from shared memory segment
+**
+** usage result = shmread(shared_mem, message)
+**
+** returns -1 on failure, 1 on success
+**         what is read from shared mem address in message (char*)
+*/
+static void _sys_shmread(context_t *context, uint32_t *args){
+	uint16_t pid;
+	sharedmem_segment* shms;
+	char* message;
+  
+  	//for debug purposes
+  	//c_printf( "read from shared mem segment\n" );
+
+  	//get current pid for protection purposes
+  	pid = _current->pid;
+	
+	//get shated mem segment to manipulate
+  	shms = (sharedmem_segment*) args[0];
+  	message = (char*) args[1];
+
+  	//make sure this process has access to shared mem segment
+  	if(pid != shms->current_pids[0] && pid != shms->current_pids[1]){
+		c_printf("Read permission denied to process %d\n", pid);
+    		context->eax = -1;
+    		return;
+  	}
+
+  	//copy from shared mem
+  	_strcpy(message, shms->address);
+	
+  	//return success
+  	context->eax = 1;
+
+} 
+
+/*
+** _sys_shmdt()
+**
+** detaches shared memory segment
+**
+** usage result = schmdt(shared_mem)
+**
+** returns -1 on failure, 1 on success
+*/
+static void _sys_shmdt(context_t *context, uint32_t *args){
+	sharedmem_segment* shms = (sharedmem_segment*) args[0];
+	uint16_t pid;
+	
+	//for debug purposes only
+	//c_printf( "detached shared mem segment\n" );
+	
+	//get current pid for permissions purposes
+	pid = _current->pid;
+	
+	//make sure current process has access to shared mem segment
+	if(pid != shms->current_pids[0] && pid != shms->current_pids[1]){
+    		c_printf("Detach permission denied to process %d\n", pid);
+    		context->eax = -1;
+    		return;
+  	}
+	
+	//make sure you're not detaching from random shared mem segment
+	if(shms->id != _current_shms->id){
+		_kpanic( "wrong shmid: detach fail" );
+	}
+	
+	//remove proper pid from member list of shared mem seg	
+	if(_current_shms->num_members > 0){
+		if(_current_shms->current_pids[0] == pid){
+			_current_shms->current_pids[0] = 0;
+			_current_shms->num_members--;	
+		} else if (_current_shms->current_pids[1] == pid){
+			_current_shms->current_pids[1] = 0;
+			_current_shms->num_members--;
+		} else {
+			context->eax = -1;
+			return;
+		}
+	}
+	
+	context->eax = 1;
+	
+}
+
+/*
+** _sys_shmrm()
+**
+** removes shared memory segment
+**
+** usage shmrm(shared_mem)
+**
+** returns 1 on success, -1 on failure
+*/
+static void _sys_shmrm(context_t *context, uint32_t *args){
+	int result;
+	sharedmem_segment *shms = (sharedmem_segment*) args[0];
+	
+	//for debug purposes
+	//c_printf( "removed shared mem segment\n" );
+	
+	//make sure you're not removing a random shared mem segment
+	if(shms->id != _current_shms->id){
+		_kpanic( "wrong shmid: remove fail" );
+	}
+	
+	//dealloc shared mem segment
+	result = _shm_dealloc(shms);
+	
+	if(result == STAT_SUCCESS){
+		context->eax = 1;
+	} else if (result == STAT_ALLOC_FAIL){
+		context->eax = -1;
+	}
+
+}
+
+
+/*
+** PUBLIC FUNCTIONS
+*/
+
+/*
+** _isr_syscall()
+**
+** common handler for all system calls; selects the correct
+** second-level routine to invoke based on contents of EAX
+**
+** note that any value being returned to the user process by
+** the system call should be put into the process' EAX save
+** area in the process context
+*/
+
+void _isr_syscall( int vector, int code ) {
+	uint32_t num;
+
+	// verify that we have a current process
+
+	if( !_current ) {
+		_kpanic( "syscall: null current" );
+	}
+
+	// verify that there is a context
+
+	if( !(_current->context) ) {
+		_kpanic( "syscall: null current context" );
+	}
+
+	// get the syscall request code
+	//
+	// if not valid, report this, and force the user to exit
+
+	num = _current->context->eax;
+	if( num >= N_SYSCALLS ) {
+		c_printf( "syscall: code %d, proc %d, killed\n", num,
+			  _current->pid );
+		num = SYS_exit;
+	}
+
+	// Invoke the handler.  The first argument is the process
+	// context; the second is the address of the first user
+	// syscall argument, which is  the second longword following
+	// the context save area on the stack.
+
+	(*_syscalls[num])( _current->context,
+			   ((uint32_t *)(_current->context + 1)) + 1 );
+	
+	// All done - tell the PIC to clear the interrupt
+
+	__outb( PIC_MASTER_CMD_PORT, PIC_EOI );
+
+}
+
+
+void _sys_init( void ) {
+
+	// set up the syscall jump table (this ensures that we
+	// get the pointers in the correct slots in the table)
+
+	_syscalls[ SYS_spawn      ] =	_sys_spawn;
+	_syscalls[ SYS_spawnl     ] =	_sys_spawnl;
+	_syscalls[ SYS_sleep      ] =	_sys_sleep;
+	_syscalls[ SYS_exit       ] =	_sys_exit;
+	_syscalls[ SYS_kill       ] =	_sys_kill;
+	_syscalls[ SYS_read       ] =	_sys_read;
+	_syscalls[ SYS_write      ] =	_sys_write;
+	_syscalls[ SYS_time       ] =	_sys_time;
+	_syscalls[ SYS_getpid     ] =	_sys_getpid;
+	_syscalls[ SYS_getppid    ] =	_sys_getppid;
+	_syscalls[ SYS_getpidlist ] =	_sys_getpidlist;
+	_syscalls[ SYS_shmget     ] =	_sys_shmget;
+	_syscalls[ SYS_shmat      ] =	_sys_shmat;
+	_syscalls[ SYS_shmwrite   ] =	_sys_shmwrite;
+	_syscalls[ SYS_shmread    ] =	_sys_shmread;
+	_syscalls[ SYS_shmdt      ] =	_sys_shmdt;
+	_syscalls[ SYS_shmrm      ] =	_sys_shmrm;
+
+	// report that we've completed this module
+
+	c_printf( " syscalls" );
+
+}
+@

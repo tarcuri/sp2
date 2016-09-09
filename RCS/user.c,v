@@ -1,0 +1,951 @@
+head	1.1;
+access;
+symbols;
+locks; strict;
+comment	@ * @;
+
+
+1.1
+date	2009.05.20.20.51.04;	author tja1618;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@/*
+** SCCS ID:	@@(#)user.c	1.1	03/31/09
+**
+** File:	user.c
+**
+** Author:	4003-506 class of 20083
+**
+** Contributor: Group 5
+**
+** Description:	User routines.
+*/
+
+#include "headers.h"
+
+#include "user.h"
+#include "processes.h"
+
+#include "shared_mem.h"
+
+/* Global declaration shared mem segment */
+sharedmem_segment* sh_seg;
+
+/*
+** USER PROCESSES
+**
+** Each is designed to test some facility of the OS:
+**
+**	User(s)		Tests/Features
+**	=======		===============================================
+**	A, B, C		Basic operation
+**	D		Spawns Z and exits
+**	E, F, G		Sleep for different lengths of time
+**	H		Doesn't call exit()
+**	J		Tries to spawn 2*MAX_PROCS copies of Y
+**	K		Spawns several copies of X
+**	L		Spawns several copies of X, changes PID
+**	M		Spawns W three times, reporting PIDs
+**	N		Spawns several copies of X, changes priority
+**	P		Iterates three times, printing system time
+**	Q		Tries to execute a bogus system call (bad code)
+**	R		Reading and writing
+**	S		Loops forever, sleeping 30 seconds at a time
+**	T		Loops forever, sleeping 30, getting pidlists
+**
+**	W, X, Y, Z	Print characters (spawned by other processes)
+**
+** Output from user processes is always alphabetic.  Uppercase 
+** characters are "expected" output; lowercase are "erroneous"
+** output.
+**
+** More specific information about each user process can be found in
+** the header comment for that function (below).
+**
+** To spawn a specific user process, uncomment its SPAWN_x
+** definition in the user.h header file.
+*/
+
+/*
+** Prototypes for all one-letter user main routines
+*/
+
+void user_a( void ); void user_b( void ); void user_c( void );
+void user_d( void ); void user_e( void ); void user_f( void );
+void user_g( void ); void user_h( void ); void user_i( void );
+void user_j( void ); void user_k( void ); void user_l( void );
+void user_m( void ); void user_n( void ); void user_o( void );
+void user_p( void ); void user_q( void ); void user_r( void );
+void user_s( void ); void user_t( void ); void user_u( void );
+void user_v( void ); void user_w( void ); void user_x( void );
+void user_y( void ); void user_z( void );
+
+/* added prototypes for producer, consumer, and evil one user routines */
+void user_producer(void);
+void user_consumer(void);
+void user_evil_one(void);
+
+/*
+** Users A, B, and C are identical, except for the character they
+** print out via write().  Each prints its ID, then loops 30
+** times delaying and printing, before exiting.
+*/
+
+void user_a( void ) {
+	int i, j;
+
+	c_puts( "User process A running\n" );
+	write( 'A' );
+	for( i = 0; i < 30; ++i ) {
+		for( j = 0; j < STD_DELAY; ++j )
+			continue;
+		write( 'A' );
+	}
+
+	c_puts( "User process A exiting\n" );
+	exit();
+
+}
+
+void user_b( void ) {
+	int i, j;
+
+	c_puts( "User process B running\n" );
+	write( 'B' );
+	for( i = 0; i < 30; ++i ) {
+		for( j = 0; j < STD_DELAY; ++j )
+			continue;
+		write( 'B' );
+	}
+
+	c_puts( "User process B exiting\n" );
+	exit();
+
+}
+
+void user_c( void ) {
+	int i, j;
+
+	c_puts( "User process C running\n" );
+	write( 'C' );
+	for( i = 0; i < 30; ++i ) {
+		for( j = 0; j < STD_DELAY; ++j )
+			continue;
+		write( 'C' );
+	}
+
+	c_puts( "User process C exiting\n" );
+	exit();
+
+	write( 'c' );	/* shouldn't happen! */
+
+}
+
+
+/*
+** User D spawns user Z.
+*/
+
+void user_d( void ) {
+	int pid;
+
+	c_puts( "User process D running\n" );
+	write( 'D' );
+	pid = spawn( user_z );
+	if( pid < 0 ) {
+		write( 'd' );
+	}
+	write( 'D' );
+
+	c_puts( "User process D exiting\n" );
+	exit();
+
+}
+
+
+/*
+** Users E, F, and G test the sleep facility.
+**
+** User E sleeps for 10 seconds at a time.
+*/
+
+void user_e( void ) {
+	int i;
+
+	c_puts( "User process E running\n" );
+	write( 'E' );
+	for( i = 0; i < 5 ; ++i ) {
+		sleep( 10 );
+		write( 'E' );
+	}
+
+	c_puts( "User process E exiting\n" );
+	exit();
+
+}
+
+
+/*
+** User F sleeps for 5 seconds at a time.
+*/
+
+void user_f( void ) {
+	int i;
+
+	c_puts( "User process F running\n" );
+	write( 'F' );
+	for( i = 0; i < 5 ; ++i ) {
+		sleep( 5 );
+		write( 'F' );
+	}
+
+	c_puts( "User process F exiting\n" );
+	exit();
+
+}
+
+
+/*
+** User G sleeps for 15 seconds at a time.
+*/
+
+void user_g( void ) {
+	int i;
+
+	c_puts( "User process G running\n" );
+	write( 'G' );
+	for( i = 0; i < 5; ++i ) {
+		sleep( 15 );
+		write( 'G' );
+	}
+
+	c_puts( "User process G exiting\n" );
+	exit();
+
+}
+
+
+/*
+** User H is like A-C except it only loops 5 times and doesn't
+** call exit().
+*/
+
+void user_h( void ) {
+	int i, j;
+
+	c_puts( "User process H running\n" );
+	write( 'H' );
+	for( i = 0; i < 5; ++i ) {
+		for( j = 0; j < STD_DELAY; ++j )
+			continue;
+		write( 'H' );
+	}
+
+	c_puts( "User process H returning without exiting!\n" );
+
+}
+
+
+/*
+** User J tries to spawn 2*MAX_PROCS copies of user_y.
+*/
+
+void user_j( void ) {
+	int i, pid;
+
+	c_puts( "User process J running\n" );
+	write( 'J' );
+
+	for( i = 0; i < MAX_PROCS * 2 ; ++i ) {
+		pid = spawn( user_y );
+		if( pid < 0 ) {
+			write( 'j' );
+		} else {
+			write( 'J' );
+		}
+	}
+
+	c_puts( "User process J exiting\n" );
+	exit();
+
+}
+
+
+/*
+** User K prints, goes into a loop which runs three times, and exits.
+** In the loop, it does a spawn of user_x, sleeps 30 seconds, and prints.
+*/
+
+void user_k( void ) {
+	int i, pid;
+
+	c_puts( "User process K running\n" );
+	write( 'K' );
+
+	for( i = 0; i < 3 ; ++i ) {
+		pid = spawn( user_x );
+		if( pid < 0 ) {
+			write( 'k' );
+		} else {
+			write( 'K' );
+			sleep( 30 );
+		}
+	}
+
+	c_puts( "User process K exiting\n" );
+	exit();
+
+}
+
+
+/*
+** User L is like user K, except that it reports the system time in each
+** iteration of the loop.
+*/
+
+void user_l( void ) {
+	int i, pid;
+	uint32_t now;
+
+	c_puts( "User process L running, " );
+	now = time();
+	c_printf( " initial time %d\n", now );
+	write( 'L' );
+
+	for( i = 0; i < 3 ; ++i ) {
+		now = time();
+		pid = spawn( user_x );
+		if( pid < 0 ) {
+			write( 'l' );
+		} else {
+			c_printf( "User L, exec succeeded at time %d\n", now );
+			write( 'L' );
+			sleep( 30 );
+		}
+	}
+
+	now = time();
+	c_printf( "User process L exiting at time %d\n", now );
+	exit();
+
+}
+
+
+/*
+** User M iterates spawns three copies of user W, reporting their PIDs.
+*/
+
+void user_m( void ) {
+	int i, pid[3];
+
+	c_puts( "User process M running\n" );
+	for( i = 0; i < 3; ++i ) {
+		pid[i] = spawn( user_w );
+		if( pid[i] < 0 ) {
+			write( 'm' );
+		} else {
+			c_printf( "User M spawned W, PID %d\n", pid[i] );
+			write( 'M' );
+		}
+	}
+
+	c_puts( "User process M exiting\n" );
+	exit();
+
+}
+
+
+/*
+** User N is like user L, except that it reports its PID when starting
+*/
+
+void user_n( void ) {
+	int i, pid;
+	uint32_t now;
+
+	c_puts( "User process N running, " );
+	pid = getpid();
+	c_printf( "pid %d\n", pid );
+	write( 'N' );
+
+	for( i = 0; i < 3 ; ++i ) {
+		now = time();
+		pid = spawn( user_x );
+		if( pid < 0 ) {
+			write( 'n' );
+		} else {
+			c_printf( "User N, exec succeeded at time %d\n", now );
+			write( 'N' );
+			sleep( 30 );
+		}
+	}
+
+	c_puts( "User process N exiting\n" );
+	exit();
+
+}
+
+
+/*
+** User P iterates three times.  Each iteration sleeps for two seconds,
+** then gets and prints the system time.
+*/
+
+void user_p( void ) {
+	uint32_t now;
+	int i;
+
+	c_printf( "User process P running, " );
+	now = time();
+	c_printf( " time %d\n", now );
+
+	write( 'P' );
+
+	for( i = 0; i < 3; ++i ) {
+		sleep( 2 );
+		now = time();
+		c_printf( "User process P reporting time %d\n", now );
+		write( 'P' );
+	}
+
+	c_printf( "User process P exiting\n" );
+	exit();
+
+}
+
+
+/*
+** User Q does a bogus system call
+*/
+
+void user_q( void ) {
+
+	c_puts( "User process Q running\n" );
+	write( 'Q' );
+	bogus();
+	c_puts( "User process Q exiting!?!?!\n" );
+	exit();
+
+}
+
+
+/*
+** User R loops 3 times reading/writing, then exits.
+*/
+
+void user_r( void ) {
+	int i;
+	int ch = '&';
+
+	c_puts( "User process R running\n" );
+	for( i = 0; i < 3; ++i ) {
+		do {
+			write( 'R' );
+			ch = read();
+			if( ch == -1 ) {	/* wait a bit */
+				write( 'r' );
+				sleep( 1 );
+			}
+		} while( ch == -1 );
+		write( ch );
+	}
+
+	c_puts( "User process R exiting\n" );
+	exit();
+
+}
+
+
+/*
+** User S sleeps for 30 seconds at a time, and loops forever.
+*/
+
+void user_s( void ) {
+
+	c_puts( "User process S running\n" );
+	write( 'S' );
+	for(;;) {
+		sleep( 30 );
+		write( 'S' );
+	}
+
+	c_puts( "User process S exiting!?!?!n" );
+	exit();
+
+}
+
+
+/*
+** User T sleeps for 30 seconds at a time, and loops forever.
+*/
+
+void user_t( void ) {
+	uint16_t buf[10];
+	int n, i;
+	uint32_t now;
+
+	c_puts( "User process T running\n" );
+	write( 'T' );
+	for(;;) {
+		now = time();
+		n = getpidlist( buf, 10 );
+		c_printf( "User T @@ %d: %d procs:", now, n );
+		if( n > 10 ) {
+			n = 10;
+			c_puts( " first 10:" );
+		}
+		for( i = 0; i < n; ++i ) {
+			c_printf( " %d", buf[i] );
+		}
+		c_putchar( '\n' );
+		sleep( 30 );
+		write( 'T' );
+	}
+
+	c_puts( "User process T exiting!?!?!n" );
+	exit();
+
+}
+
+
+/*
+** User W prints W characters 20 times, sleeping 3 seconds between.
+*/
+
+void user_w( void ) {
+	int i;
+	int pid, ppid;
+
+	c_printf( "User process W running, " );
+	pid = getpid();
+	ppid = getppid();
+	c_printf( " PID %d, PPID \n", pid, ppid );
+	for( i = 0; i < 20 ; ++i ) {
+		write( 'W' );
+		sleep( 3 );
+	}
+
+	c_printf( "User process W exiting, PID %d\n", pid );
+	exit();
+
+}
+
+
+/*
+** User X prints X characters 20 times.  It is spawned multiple
+** times, and prints its PID when started and exiting.
+*/
+
+void user_x( void ) {
+	int i, j;
+	int pid;
+
+	c_puts( "User process X running, " );
+	pid = getpid();
+	c_printf( "PID %d, ", pid );
+
+	for( i = 0; i < 20 ; ++i ) {
+		write( 'X' );
+		for( j = 0; j < STD_DELAY; ++j )
+			continue;
+	}
+
+	c_printf( "User process X exiting, PID %d\n", pid );
+	exit();
+
+}
+
+
+/*
+** User Y prints Y characters 10 times.
+*/
+
+void user_y( void ) {
+	int i, j;
+
+	c_puts( "User process Y running\n" );
+	for( i = 0; i < 10 ; ++i ) {
+		write( 'Y' );
+		for( j = 0; j < ALT_DELAY; ++j )
+			continue;
+		sleep( 1 );
+	}
+
+	c_puts( "User process Y exiting\n" );
+	exit();
+
+}
+
+
+/*
+** User Z prints Z characters 10 times.
+*/
+
+void user_z( void ) {
+	int i, j;
+
+	c_puts( "User process Z running\n" );
+	for( i = 0; i < 10 ; ++i ) {
+		write( 'Z' );
+		for( j = 0; j < STD_DELAY; ++j )
+			continue;
+	}
+
+	c_puts( "User process Z exiting\n" );
+	exit();
+
+}
+
+
+/* Added user producer and consumer */
+
+/*
+** User Producer gets shared mem segment, attaches, writes to it, and then
+** detaches
+*/
+void user_producer( void ){
+	int p_shmid = 0;
+	int p_pid = 0;
+	char* shm_seg1;
+	int result;
+
+	c_printf("User process Producer running\n");
+	p_pid = getpid();
+	
+	//get shared mem segment and attach
+	p_shmid = shmget(SHM_DSIZE, 2);
+	
+	if(p_shmid == -1){
+		c_printf("Producer could not get shared mem segment\n");
+		exit();
+	}
+		
+	c_printf("producer shared_mem segid = %d\n", p_shmid);
+	sh_seg->id = p_shmid;
+	shm_seg1 = shmat(p_shmid);
+		
+	if(shm_seg1 == 0){
+		c_printf("Producer could not attach shared mem segment\n");
+		exit();
+	}
+	
+	sh_seg->current_pids[0] = p_pid;
+	
+	sh_seg->address = (char*) shm_seg1;
+	
+	c_printf("Producer shared mem seg address %d\n", sh_seg->address);
+	
+	//write to shared mem seg then detach
+	result = shmwrite(sh_seg, "Hello World!\n");
+	if(result == -1){
+		c_printf("Producer could not write to shared mem segment\n");
+		exit();
+	}
+	
+	result = shmdt(sh_seg);
+	
+	if(result == -1){
+		c_printf("Producer could not detach from shared mem segment\n");
+		exit();
+	}
+	
+	c_printf("User process Producer exiting\n");
+	exit();
+	
+}
+
+
+/*
+** User Consumer attaches shared mem, and reads from it, detaches, and then
+** removes it
+*/
+void user_consumer( void ){
+	int c_pid;
+	int c_shmid;
+	char* shm_seg2;
+	char contents[256];
+        int result;
+	
+	c_printf("User process Consumer running\n");
+	c_pid = getpid();
+	
+	//get segment id you want to attach and attach to it
+	c_shmid = sh_seg->id;
+	c_printf("consumer shared_mem segid = %d\n", c_shmid);
+	
+	shm_seg2 = shmat(c_shmid);
+	if(shm_seg2 == 0){
+		c_printf("Consumer could not attach shared mem segment\n");
+		exit();
+	}
+	
+	sh_seg->current_pids[1] = c_pid;
+	sh_seg->address = (char*) shm_seg2;
+	c_printf("Producer shared mem seg address %d\n", sh_seg->address);
+		
+	//read from it and print message
+	result = shmread(sh_seg, contents);
+	if(result == -1){
+		c_printf("Consumer could not read from shared mem segment\n");
+		exit();
+	}
+	
+	c_printf(contents);
+	
+	//detach, remove, exit
+	result = shmdt(sh_seg);
+	if(result == -1){
+		c_printf("Consumer could not detach from shared mem segment\n");
+		exit();
+	}
+	
+	result = shmrm(sh_seg);
+	if(result == -1){
+		c_printf("Consumer could not remove shared mem segment\n");
+		exit();
+	}
+	
+	c_printf("User process Consumer exiting\n");
+	exit();
+
+}
+
+/* 
+**
+** Process that tries to read and write from shared mem seg without going
+** through the process of acquiring a new shared mem seg, trying to attach to 
+** the already existing one, or detaching/removing. Essentially tries to gain
+** access to shared mem segment without having permission.
+**
+*/
+void user_evil_one( void ) {
+	int e_pid, result;
+	char contents[256];
+	
+	c_printf("User process Evil One running\n");
+	e_pid = getpid();
+	
+	//write to shared mem seg
+	result = shmwrite(sh_seg, "I am evil!\n");
+	if(result == -1){
+		c_printf("Evil One could not write to shared mem segment\n");
+	}
+	
+	//read from it and print message
+	result = shmread(sh_seg, contents);
+	if(result == -1){
+		c_printf("Evil One could not read from shared mem segment\n");
+	}
+	
+	//print what was read if you can
+	if(result != -1) {
+		c_printf(contents);
+	}
+	
+	c_printf("User process Evil One exiting\n");
+	exit();
+	
+}
+
+
+/*
+** SYSTEM PROCESSES
+*/
+
+
+/*
+** Idle process
+*/
+
+void user_idle( void ) {
+	int i;
+
+	write( '.' );
+
+	for(;;) {
+		for( i = 0; i < LONG_DELAY; ++i )
+			continue;
+		write( '.' );
+	}
+
+	c_puts( "+++ Idle process done!?!?!\n" );
+
+	exit();
+}
+
+
+/*
+** Initial process; it starts the other top-level user processes.
+*/
+
+void user_first( void ) {
+	int pid;
+
+	write( '$' );
+
+#ifdef SPAWN_A
+	pid = spawn( user_a );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user A\n" );
+	}
+#endif
+
+#ifdef SPAWN_B
+	pid = spawn( user_b );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user B\n" );
+	}
+#endif
+
+#ifdef SPAWN_C
+	pid = spawn( user_c );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user C\n" );
+	}
+#endif
+
+#ifdef SPAWN_D
+	pid = spawn( user_d );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user D\n" );
+	}
+#endif
+
+#ifdef SPAWN_E
+	pid = spawn( user_e );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user E\n" );
+	}
+#endif
+
+#ifdef SPAWN_F
+	pid = spawn( user_f );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user F\n" );
+	}
+#endif
+
+#ifdef SPAWN_G
+	pid = spawn( user_g );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user G\n" );
+	}
+#endif
+
+#ifdef SPAWN_H
+	pid = spawn( user_h );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user H\n" );
+	}
+#endif
+
+#ifdef SPAWN_J
+	pid = spawn( user_j );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user J\n" );
+	}
+#endif
+
+#ifdef SPAWN_K
+	pid = spawn( user_k );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user K\n" );
+	}
+#endif
+
+#ifdef SPAWN_L
+	pid = spawn( user_l );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user L\n" );
+	}
+#endif
+
+#ifdef SPAWN_M
+	pid = spawn( user_m );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user M\n" );
+	}
+#endif
+
+#ifdef SPAWN_N
+	pid = spawn( user_n );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user N\n" );
+	}
+#endif
+
+#ifdef SPAWN_P
+	pid = spawn( user_p );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user P\n" );
+	}
+#endif
+
+#ifdef SPAWN_Q
+	pid = spawn( user_q );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user Q\n" );
+	}
+#endif
+
+#ifdef SPAWN_R
+	pid = spawn( user_r );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user R\n" );
+	}
+#endif
+
+#ifdef SPAWN_S
+	pid = spawn( user_s );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user S\n" );
+	}
+#endif
+
+#ifdef SPAWN_T
+	pid = spawn( user_t );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user T\n" );
+	}
+#endif
+
+/* added call to producer and consumer */
+
+#ifdef SPAWN_PRODUCER
+	pid = spawn( user_producer );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user Producer\n" );
+	}
+#endif	
+
+#ifdef SPAWN_CONSUMER
+	pid = spawn( user_consumer );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user Consumer\n" );
+	}
+#endif
+
+#ifdef SPAWN_EVIL_ONE
+	pid = spawn( user_evil_one );
+	if( pid < 0 ) {
+		c_puts( "first: can't spawn user Evil One\n" );
+	}
+#endif
+
+	write( '!' );
+
+	exit();
+
+}
+@

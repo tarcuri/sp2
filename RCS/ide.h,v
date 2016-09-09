@@ -1,0 +1,208 @@
+head	1.1;
+access;
+symbols;
+locks; strict;
+comment	@ * @;
+
+
+1.1
+date	2009.05.20.20.51.02;	author tja1618;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@/*
+**
+** File    : ide.h
+**
+** Author  : Thomas J Arcuri <tja1618>
+**
+** Created : Tue Apr 21 17:55:15 EDT 2009
+**
+** Intel ICH5 IDE I/O controller initialization and configuration
+*/
+
+#define	__KERNEL__20083__
+
+#ifndef _IDE_H
+#define _IDE_H
+
+#include "headers.h"
+
+// primary and secondary IDE channel interrupt vectors (after offset)
+#define INT_VEC_PRI_PATA_IDE		0x2e
+#define INT_VEC_SEC_PATA_IDE		0x2f
+
+// ICH5 IDE controller vendor and device id
+#define ICH5_IDE_CTRL_VENDOR_ID		0x8086
+#define ICH5_IDE_CTRL_DEVICE_ID		0x24db
+
+// ICH5 IDE controller PCI registers (see table 154 of ICH5 data sheet)
+#define ICH5_IDE_CTRL_DEVICE_ID_REGISTER		0x00
+#define ICH5_IDE_CTRL_VENDOR_ID_REGISTER		0x02
+#define ICH5_IDE_CTRL_PCI_STATUS_REGISTER		0x04
+#define ICH5_IDE_CTRL_PCI_COMMAND_REGISTER		0x06
+#define ICH5_IDE_CTRL_REV_ID_REGISTER			0x08
+#define ICH5_IDE_CTRL_PROG_INT_REGISTER			0x09
+#define ICH5_IDE_CTRL_SUB_CLASS_REGISTER		0x0a
+#define ICH5_IDE_CTRL_BASE_CLASS_REGISTER		0x0b
+#define ICH5_IDE_CTRL_PRI_CMD_BLOCK_BASE_REGISTER	0x10
+#define ICH5_IDE_CTRL_PRI_CTRL_BLOCK_BASE_REGISTER	0x14
+#define ICH5_IDE_CTRL_SEC_CMD_BLOCK_BASE_REGISTER	0x18
+#define ICH5_IDE_CTRL_SEC_CTRL_BLOCK_BASE_REGISTER	0x1c
+#define ICH5_IDE_CTRL_BUS_MASTER_BASE_REGISTER		0x20
+
+// command block register addresses
+#define IDE_PRI_CMD_BLOCK_REG		0x01f0
+#define IDE_SEC_CMD_BLOCK_REG		0x0170
+
+// command block register offsets
+#define IDE_CMD_BR_DATA			0x00	// data (r/w)
+#define IDE_CMD_BR_ERROR		0x01	// error status (ro)
+#define IDE_CMD_BR_FEATURES		0x01	// features (wo)
+#define IDE_CMD_BR_SEC_COUNT		0x02	// sector count (r/w)
+#define IDE_CMD_BR_CYL_LOW		0x03	// cylinder low (r/w)
+#define IDE_CMD_BR_CYL_MID		0x04	// cylinder mid (r/w)
+#define IDE_CMD_BR_CYL_HIGH		0x05	// cylinder high (r/w)
+#define IDE_CMD_BR_DRIVE_SELECT		0x06	// drive select (r/w)
+#define IDE_CMD_BR_STATUS		0x07	// status (ro)
+#define IDE_CMD_BR_COMMAND		0x07	// command (wo)
+
+// IDE status register bits
+#define IDE_CMD_BR_R_STS_BUSY  		0x80 	// Bit 7
+#define IDE_CMD_BR_R_STS_DRDY		0x40
+#define IDE_CMD_BR_R_STS_DWF		0x20
+#define IDE_CMD_BR_R_STS_DSC		0x10
+#define IDE_CMD_BR_R_STS_DRQ		0x08
+#define IDE_CMD_BR_R_STS_CORR		0x04
+#define IDE_CMD_BR_R_STS_IDX		0x02
+#define IDE_CMD_BR_R_STS_ERR		0x01	// bit 0
+
+// the 5th bit of the device register selects the IDE drive (set to select drive 1)
+#define IDE_DEV_REG_SELECT_LBA		0x40
+#define IDE_DEV_REG_SELECT_1		0x10
+
+
+/*
+** control block registers (4 bytes)
+**
+** primary  : 0x03f4 - 0x03f7
+** secondary: 0x0374 - 0x0377
+*/
+
+// control block register addresses
+#define IDE_PRI_CTRL_BLOCK_REG  		0x03f4
+#define IDE_SEC_CTRL_BLOCK_REG  		0x0374
+
+#define IDE_CTRL_BLK_REG_DEVICE_CONTROL		0x0006
+#define IDE_CTRL_BLK_REG_ALT_STATUS		0x0006
+
+#define IDE_CTRL_DEVICE_CONTROL_SOFT_RESET	0x04
+#define IDE_CTRL_DEVICE_CONTROL_nIEN            0x02
+
+
+/*
+** bus master regisers (8 bytes)
+**
+** primary  : 0xffa0 - 0xffa7
+** secondary: 0xffa8 - 0xffaf
+*/
+
+#define IDE_PRI_BUS_MASTER_REG 			0xffa0
+#define IDE_SEC_BUS_MASTER_REG 			0xffa8
+
+/*
+** ICH5 IDE controller registers
+**
+** The actual IO controller registers of the Intel 82801EB ICH5.
+*/
+
+#define ICH5_IDE_BUS_MASTER_ADDR_REGISTER	0x20 	// bus master base address (assigned 16-bit bas IO address)
+
+#define ICH5_IDE_PCI_MEM_EXP_ADDR_REGISTER	0x24	// 4 byte memory expansion address for ICH5
+
+/*
+	IDE configuration ports
+*/
+#define ICH5_IDE_PCI_CONFIG_ADDR_PORT		0x0cf8	// PCI configuration 32-bit address port (0cf8-0cfbh)
+#define ICH5_IDE_PCI_CONFIG_DATA_PORT		0x0cfc	// PCI configuration 32-bit data port    (0cfc-0cffh)
+
+#define ICH5_IDE_CONTROLLER_BASE		0x0000	// this is the base address of the controller registers which is MIA
+
+/*
+** ICH5 IDE controller PCI command register
+**
+*/
+
+#define ICH5_IDE_PCICMD_REGISTER		0x04	// 04-05 PCI command offset
+
+// the 10th bit of the register disables interrupts
+#define ICH5_IDE_PCICMD_REG_INT_DISABLE		0x0400
+#define ICH5_IDE_PCICMD_REG_IO_ENABLE		0x0001
+
+/*
+** ICH5 IDE controller PCI status register
+**
+*/
+#define ICH5_IDE_PCISTS_REGISTER		0x06	// 06-07h PCI status
+
+#define ICH5_IDE_PCISTS_INT_STATUS_ASSERTED	0x0008	// 4th bit is on if INT is asserted
+#define ICH5_IDE_PCISTS_SIG_SYS_ERROR		0x4000	// 15th bit is on for Signaled System Error
+#define ICH5_IDE_PCISTS_SIG_PAR_ERROR		0x8000	// 16th bit is on for Detected Parity Error
+
+/*
+** ICH5 IDE controller Programming Interface Register
+*/
+
+#define ICH5_IDE_PROG_INTERFACE_REGISTER	0x09	// see 10.1.6
+
+#define ICH5_IDE_PRI_OP_MODE_NATIVE		0x01	// primary mode select   :mode 1: native, mode 0: legacy (default)
+#define ICH5_IDE_SEC_OP_MODE_NATIVE		0x04	// secondary mode select
+#define ICH5_IDE_BUS_MASTER_OP_SUPPORTED	0x80	// ro bit is 1 to indicate bus master operation support
+
+
+/*
+** Private Global Variables
+*/
+
+/*
+** Prototypes
+*/
+
+#ifndef __ASM__20083__
+
+/*
+** init_ide()
+**
+** Initialize the ICH5 IDE controller (see the ICH5 programmers reference manual)
+**
+** 1) if native mode is desired, set the appropriate bit in the Programming Interface register
+**
+** 2) PCI "Expansion Base Memory Address" register (24-27h) is assigned 32-bit base memory address
+**
+** 3) base controller configuration:
+**
+**	a) "Bus Master Base IO Address" register (20-23h) is assigned 16-bit base IO address**
+**	b) PCI command register bit 0 is 1, bit 2 is 1
+**	c) IDE Decode Enable bit is 1 for each controller
+**	d) which bit is this referring to?
+**	e) see d
+**
+** 4) issue an IDENTIFY_DRIVE command to connected ATA devices to determine capabilities
+**
+*/
+void _ide_init( void );
+
+#endif
+
+#endif
+@

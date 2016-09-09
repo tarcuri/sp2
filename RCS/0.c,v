@@ -1,0 +1,58 @@
+head	1.1;
+access;
+symbols;
+locks; strict;
+comment	@ * @;
+
+
+1.1
+date	2009.05.20.20.51.01;	author tja1618;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@/*
+** SCCS ID:	%W%	%G%
+**
+** File:	?
+**
+** Author:	4003-506 class of 20083
+**
+** Contributor:
+**
+** Description:	?
+*/
+
+#define	__KERNEL__20083__
+
+#include "headers.h"
+
+/*
+** PRIVATE DATA TYPES
+*/
+
+/*
+** PRIVATE GLOBAL VARIABLES
+*/
+
+/*
+** PUBLIC GLOBAL VARIABLES
+*/
+
+/*
+** PRIVATE FUNCTIONS
+*/
+
+/*
+** PUBLIC FUNCTIONS
+*/
+@

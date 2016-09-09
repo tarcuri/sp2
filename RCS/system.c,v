@@ -1,0 +1,284 @@
+head	1.1;
+access;
+symbols;
+locks; strict;
+comment	@ * @;
+
+
+1.1
+date	2009.05.20.20.51.03;	author tja1618;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@/*
+** SCCS ID:	@@(#)system.c	1.1	03/31/09
+**
+** File:	system.c
+**
+** Author:	4003-506 class of 20083
+**
+** Contributor:
+**
+** Description:	miscellaneous system routines
+*/
+
+#define	__KERNEL__20083__
+
+#include "headers.h"
+
+#include "system.h"
+
+#include "bootstrap.h"
+#include "clock.h"
+#include "processes.h"
+#include "scheduler.h"
+#include "sio.h"
+#include "syscalls.h"
+#include "user.h"
+// added by tja
+#include "device.h"
+//#include "ide.h"
+#include "ata.h"
+
+	// also need the exit() location
+#include "ulib.h"
+
+/*
+** PUBLIC FUNCTIONS
+*/
+
+/*
+** _make_proc()
+**
+** common routine which initializes the PCB and stack for a new process
+**
+** this is done here so that this code can be re-used in the system
+** initialization code for the idle and first processes as well as 
+** in the syscall implementations
+*/
+
+uint16_t _make_proc( pcb_t *pcb, stack_t *stack, void *fcn, uint8_t level ) {
+	context_t *context;
+	uint32_t *ret;
+
+	// get rid of all old data
+
+	_memclr( (void *) pcb, sizeof(pcb_t) );
+	_memclr( (void *) stack, sizeof(stack_t) );
+
+	// start to fill in the PCB contents
+
+	pcb->stack = stack;
+	pcb->pid = _next_pid++;
+	pcb->level = level;
+
+	// set up the initial stack frame for the child
+	//
+	// first, find the location of the penultimate word in
+	// the stack; this is where we'll put a (fake) return
+	// address, which should cause the user process to
+	// "return" to the exit() syscall
+	//
+	// this leaves the longword at the bottom of the
+	// stack containing 0
+
+	ret = ((uint32_t *) (stack + 1)) - 2;
+	*ret = (uint32_t) exit;
+
+	// next, the process context
+	//
+	// find the location of this by backing up from the
+	// dummy return address location
+
+	context = ((context_t *) ret) - 1;
+
+	// create the process context pointer for the child
+
+	pcb->context = context;
+
+	// fill in the segment register save areas
+
+	context->ss = GDT_STACK;
+	context->gs = GDT_DATA;
+	context->fs = GDT_DATA;
+	context->es = GDT_DATA;
+	context->ds = GDT_DATA;
+	context->cs = GDT_CODE;
+
+	// next, the initial EFLAGS settings
+
+	context->eflags = DEFAULT_EFLAGS;
+
+	// finally, the entry point for this process
+
+	context->eip = (uint32_t) fcn;
+
+	// return the PID of the new process
+
+	return( pcb->pid );
+
+}
+
+/*
+** _cleanup(pcb)
+**
+** called to clean up a PCB by deallocating the stack and PCB structures
+*/
+
+void _cleanup( pcb_t *pcb ) {
+
+	if( pcb ) {
+		if( pcb->stack ) {
+			_stack_dealloc( pcb->stack );
+		}
+		_pcb_dealloc( pcb );
+	}
+
+}
+
+/*
+** _init:	system initialization routine
+**
+** Called by startup code immediately before returning into the
+** first user-level process.  The name is taken from there.
+*/
+
+void _init( void ) {
+	pcb_t *pcb;
+	stack_t *stack;
+
+	//
+	// BOILERPLATE CODE - taken from basic framework
+	//
+	// Initialize interrupt stuff.
+	//
+
+	__init_interrupts();	// IDT and PIC initialization
+
+	//
+	// I/O system.
+	//
+
+	c_io_init();
+	c_setscroll( 0, 7, 99, 99 );
+	c_puts_at( 0, 6, "================================================================================" );
+
+	c_puts( "Module init: " );
+
+	//
+	// 20083-SPECIFIC CODE STARTS HERE
+	//
+
+	//
+	// Initialize various OS modules
+	//
+
+	_q_init();		// must be first
+	_pcb_init();
+	_stack_init();
+	_sio_init();
+	_clock_init();
+	_sys_init();
+
+	// shared memory initialization
+	_mem_init();
+	_shm_init();
+
+	// device module initialization
+	__install_isr( ATA_INT_VEC_PRI_PATA, _ata_isr );
+
+	_dev_init();
+
+	c_puts( " done.\n" );
+
+	// install the ISRs
+
+	__install_isr( INT_VEC_TIMER, _isr_clock );
+	__install_isr( INT_VEC_SYSCALL, _isr_syscall );
+	__install_isr( INT_VEC_SERIAL_PORT_1, _isr_sio );
+
+	//
+	// Create the idle process
+	//
+	// First, get a PCB and a stack
+	//
+
+	pcb = _pcb_alloc();
+	if( !pcb ) {
+		_kpanic( "_init: idle pcb alloc failed" );
+	}
+
+	stack = _stack_alloc();
+	if( !stack ) {
+		_kpanic( "_init: idle stack alloc failed" );
+	}
+
+	// populate the PCB and stack (ignore the return PID value)
+
+	_make_proc( pcb, stack, user_idle, LEVEL_LOW );
+
+	// schedule it
+
+	_schedule( pcb );
+
+	// do it all again for the first user process
+
+	pcb = _pcb_alloc();
+	if( !pcb ) {
+		_kpanic( "_init: first pcb alloc failed" );
+	}
+
+	stack = _stack_alloc();
+	if( !stack ) {
+		_kpanic( "_init: first stack alloc failed" );
+	}
+
+	_make_proc( pcb, stack, user_first, LEVEL_DEFAULT );
+
+	_schedule( pcb );
+
+
+
+	pcb = _pcb_alloc();
+	if( !pcb ) {
+		_kpanic( "_init: first pcb alloc failed" );
+	}
+
+	stack = _stack_alloc();
+	if( !stack ) {
+		_kpanic( "_init: first stack alloc failed" );
+	}
+
+	// schedule the ramdisk test instead of the user processes
+	_make_proc( pcb, stack, _ata_test_proc, LEVEL_DEFAULT );
+
+	_schedule( pcb );
+
+	// dispatch the initial current process
+
+	_dispatch();
+
+	// turn on the SIO
+
+	_sio_enable( 1, 1 );
+
+	//
+	// END OF 20083-SPECIFIC CODE
+	//
+	// Finally, report that we're all done.
+	//
+
+	c_puts( "System initialization complete.\n" );
+
+}
+@
